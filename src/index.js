@@ -1,4 +1,4 @@
-import { decorate, configure, observable, computed, action, runInAction, when, autorun } from 'mobx';
+import { decorate, configure, observable, computed, action } from 'mobx';
 import { observer } from 'mobx-react';
 import React, { Component } from 'react';
 import ReactDOM from 'react-dom';
@@ -9,6 +9,7 @@ import { merge } from 'lodash'
 import * as serviceWorker from './serviceWorker';
 
 configure({ enforceActions: "observed" });
+
 
 function* next_day_ua_generator(initial = 0) {
     if (initial < 0 || initial > 6)
@@ -25,20 +26,19 @@ class Store {
     WEEK_MS = this.DAY_NIGHT_MS * 6;
     DAYS_NAME = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
     date2str = (dt) => {
-        console.log("dt=", dt);
+        //console.log("dt=", dt);
         return (new Date(dt)).toISOString().slice(0, 10);
     }
-    today = new Date();
-    @observable count = 0;
+    @observable today = new Date();
     @observable first_date_str = this.date2str(this.today);
     @observable last_date_str = this.date2str(new Date(this.today.getTime() + this.WEEK_MS));
     @observable row_names = [
-        { name: "1+1 SDI main serv", url_name: "1plus1/main/1plus1.analog" },
-        { name: "1+1 SDI back serv", url_name: "1plus1/backup/1plus1.analog" },
+        { name: "1+1 SDI main serv", url_name: "1plus1/analog/main/1plus1.analog" },
+        { name: "1+1 SDI back serv", url_name: "1plus1/analog/backup/1plus1.analog" },
         { name: "1+1 SDI main titl", url_name: "1plus1/plashka/main/1plus1.kyiv-sdi" },
         { name: "1+1 SDI back titl", url_name: "1plus1/plashka/backup/1plus1.kyiv-sdi" },
-        { name: "2+2 SDI main serv", url_name: "2plus2/main/2plus2.analog" },
-        { name: "2+2 SDI back serv", url_name: "2plus2/backup/2plus2.analog" },
+        { name: "2+2 SDI main serv", url_name: "2plus2/analog/main/twoplustwo.analog" },
+        { name: "2+2 SDI back serv", url_name: "2plus2/analog/backup/twoplustwo.analog" },
         { name: "2+2 SDI main titl", url_name: "2plus2/plashka/main/2plus2.kyiv-sdi" },
         { name: "2+2 SDI back titl", url_name: "2plus2/plashka/backup/2plus2.kyiv-sdi" },
         { name: "TET SDI main titl", url_name: "TET/plashka/main/TET.kyiv-sdi" },
@@ -56,7 +56,7 @@ class Store {
         const week_day_en = this.first_date.getDay();
         const day_ua = (week_day_en === 0) ? 6 : week_day_en - 1;
         const week_day_ua = next_day_ua_generator(day_ua);
-        console.log("time_range", first_time_ms, last_time_ms);
+        //console.log("time_range", first_time_ms, last_time_ms);
         for (let i = first_time_ms,
             week_idx = week_day_ua.next().value;
             i <= last_time_ms;
@@ -67,35 +67,14 @@ class Store {
         return arr;
     }
 
-
-    getUser() {
-        console.log("get user func");
-        fetch('https://randomuser.me/api/')
-            .then(res => res.json())
-            .then(json => {
-                if (json.results) {
-                    runInAction(() => this.user = json.results[0])
-                    // this.setUser(json.results[0]);
-                }
-            })
-    }
-
-    @action increment = () => {
-        this.count++;
-    }
-
-    @action decrement = () => {
-        this.count--;
-    }
-
     @action setFirstDate = (first_date_str) => {
         this.first_date_str = first_date_str;
         const first_date = Date.parse(this.first_date_str);
-        console.log(first_date, first_date_str);
+        //console.log(first_date, first_date_str);
 
         if (first_date > Date.parse(this.last_date_str)) {
             this.setLastDate(this.date2str(first_date + this.WEEK_MS));
-            console.log("LD", this.last_date_str);
+            //console.log("LD", this.last_date_str);
         }
     }
 
@@ -105,67 +84,95 @@ class Store {
 
         if (Date.parse(this.first_date_str) > last_date)
             this.setFirstDate(this.date2str(last_date - this.WEEK_MS));
-        console.log(this.date_range_str);
+        //console.log(this.date_range_str);
     }
 
     @action setLogParametr = (obj) => merge(this.log, obj);
+    // @action setPathParametr = (obj) => merge(this.row_names, obj);
     @action setStore = (obj) => merge(this, obj);
-    // @action setLogProtocol = (serv) => this.log_protocol = serv;
-    // @action setLogServer = (serv) => this.log_server = serv;
-    // @action setLogUser = (serv) => this.log_user = serv;
-    // @action setLogPassword = (serv) => this.log_password = serv;
-    // @action setLogFolder = (serv) => this.log_folder = serv;
 }
 
-decorate(Store, {
-    user: observable,
-    getUser: action.bound,
-    setUser: action,
-})
 
 const appStore = new Store();
-console.log(appStore.count);
+//console.log(appStore.count);
 
-when(
-    () => appStore.count > 5,
-    () => alert("!!!!>>>>5")
-);
 
-autorun(
-    () => {
-        if (appStore.count > 10)
-            alert(`counter=${appStore.count}`);
-    },
-    {
-        name: "Autorun fucntion",
-        delay: 3000,
-    }
-);
 
-function Link(props) {
-    return <a href={props.url}>{props.name}<br />{props.name2}</a>;
+function isVerFile(text) {
+    const start = "REM expected   |window   |   |sch|      |real values"
+    return text.indexOf(start) == 0;
 }
+
+const fetchContent = async (url) => {
+    let response = await fetch(url);
+    let text = await response.text();
+    return text;
+}
+
+
+class Link extends Component {
+    constructor(props) {
+        super(props);
+
+        this.state = { linkClass: "no-file-link", content: "" };
+        fetchContent(this.props.url).then(text => {
+            console.log(text);
+            if (isVerFile(text)) {
+                this.setState({
+                    linkClass: "exist-file-link",
+                    content: text,
+                });
+            }
+        }
+        )
+    }
+
+    render() {
+        // const content = (async () => await download_text(this.props.url))();
+        // let classname = (content !== "") ? 'exist-file-link' : 'no-file-link'
+        // console.log(classname, content);
+        return (<div>
+            <a
+                href={this.props.url}
+                className={this.state.linkClass}
+            >
+                {this.props.name}
+
+            </a >
+            {/* <button onClick={() => download("http://google.com")}>Download</button> */}
+        </div>);
+
+    }
+}
+
+
 
 function LinkTable(props) {
     const store = props.store;
-    const header_items = store.date_range_str.map((str) => <div>
-        <div>{str.date.slice(5).replace(/-/g, ".")}</div> <div>{str.day}</div>
+    const header_items = store.date_range_str.map((str, idx) => <div key={idx}>
+        <div>{str.date.slice(5).replace(/-/g, ".")}</div>
+        <div>{str.day}</div>
     </div>);
     return <table>
         <thead>
             <tr>
                 <th>Name/Date</th>{header_items.map((link, i) => <th key={i}>{link}</th>)}
+                {/* <th>Path</th> */}
             </tr>
         </thead>
         <tbody>
-            {store.row_names.map((row) => {
-                return <tr>
+            {store.row_names.map((row, idx) => {
+                return <tr key={idx}>
                     <td>{row.name}</td>
                     {store.date_range_str.map((str) => {
                         const { server, user, password, folder, protocol } = store.log;
-                        const log_url = `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+                        // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+                        const log_url = (user != "" && password != "") ?
+                            `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`
+                            :
+                            `${protocol}://${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
                         return (
-                            <td>
+                            <td key={log_url}>
                                 <Link
                                     name={str.date.slice(5).replace(/-/g, ".")}
                                     url={log_url}
@@ -179,14 +186,67 @@ function LinkTable(props) {
     </table>
 }
 
+
+// const download_text = (url) => {
+//     fetch(url)
+//         .then(response => response.text())
+//         .then(down_text => { text = down_text; console.log("down", down_text); })
+//         .catch(error => console.log(`I thin there is no file on ${url} \n ${error}`));
+
+//     if (isVerFile(text)) {
+//         // console.log(text);
+//         return text;
+//     }
+
+//     return text;
+// }
+
+// function verFiles(store) {
+//     let tbl=[];
+//     const { server, user, password, folder, protocol } = store.log;
+//     const prefix_log_url = (user != "" && password != "") ?
+//     `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}` //.${str.date.replace(/-/g, ".")}.ver`
+//     :
+//     `${protocol}://${server}/${folder}/${row.url_name}`;//.${str.date.replace(/-/g, ".")}.ver`;
+
+
+//     store.row_names.forEach((row,i) => {
+//         const promises = store.date_range_str.map(str
+
+//         )  row.name
+
+//     });
+
+
+
+
+//     return store.row_names.map(row => {
+
+//         return Promise.all(store.date_range_str.map(async (str) => {
+//             const { server, user, password, folder, protocol } = store.log;
+//             // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+//             const log_url = (user != "" && password != "") ?
+//                 `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`
+//                 :
+//                 `${protocol}://${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+//             let response = await fetch(log_url);
+//             let text = await response.text();
+//             return text;
+//         })).then(values => values);
+//     });
+// }
+
+
+
+
 @observer class App extends Component {
     constructor(props) {
         super(props);
         const local_store = JSON.parse(localStorage.getItem("store"));
-        console.log(local_store);
         props.store.setStore(local_store);
-        // merge(this.props.store, local_store);
-        // this.props.store.setLogParametr(local_store);
+
+        // const tbl = verFiles(appStore);
+        // console.log(tbl)
     }
 
     changeLogServerParameters = (e) => {
@@ -195,17 +255,25 @@ function LinkTable(props) {
         localStorage.setItem("store", JSON.stringify(store));
     }
 
+    changeDate = (e) => {
+        const { store } = this.props;
+        switch (e.target.name) {
+            case "first_date_str":
+                store.setFirstDate(e.target.value);
+                break;
+            case "last_date_str":
+                store.setLastDate(e.target.value);
+                break;
+        }
+        localStorage.setItem("store", JSON.stringify(store));
+    }
+
     render() {
         const { store } = this.props;
-        console.log(store.getUser);
+        //console.log(store.getUser);
 
         return (
             <div className="App">
-                <button onClick={store.getUser}>Get user</button>
-                <h1>{store.user ? store.user.login.username : "default user"}</h1>
-                <button onClick={store.increment}>+</button><button onClick={store.decrement}>-</button>
-                <h1>{store.count}</h1>
-
                 <input name='protocol' type="text" onChange={this.changeLogServerParameters} value={store.log.protocol} />
                 ://
                 <input name='user' type="text" onChange={this.changeLogServerParameters} value={store.log.user} />
@@ -216,13 +284,11 @@ function LinkTable(props) {
                 /
                 <input name='folder' type="text" onChange={this.changeLogServerParameters} value={store.log.folder} />
                 <br />
-                <input type="date" onChange={(e) => store.setFirstDate(e.target.value)} value={store.first_date_str} />
-                <input type="date" onChange={(e) => store.setLastDate(e.target.value)} value={store.last_date_str} />
+                <input name="first_date_str" type="date" onChange={this.changeDate} value={store.first_date_str} />
+                <input name="last_date_str" type="date" onChange={this.changeDate} value={store.last_date_str} />
                 <LinkTable store={store} />
-                {/* <ul>
-                    {store.date_range_str.map((str) => <li key={str.date}><Link name={str.date} url={str.date} /></li>)}
-                </ul> */}
-            </div >
+                <img src={process.env.PUBLIC_URL + '/img/brovar.jpg'} />
+            </div>
         );
     }
 }
