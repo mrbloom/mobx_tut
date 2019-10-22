@@ -19,3 +19,15 @@ code {
 .exist-file-link{
   color: blue
 }
+
+.error-file-link{
+  color: red
+}
+
+.warning-file-link{
+  color: rgb(199, 182, 26)
+}
+
+.ok-file-link{
+  color: green
+}

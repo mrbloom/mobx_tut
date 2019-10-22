@@ -1,10 +1,11 @@
-import { decorate, configure, observable, computed, action } from 'mobx';
+import { configure, observable, computed, action } from 'mobx';
 import { observer } from 'mobx-react';
-import React, { Component } from 'react';
+import React, { Component, useState } from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
 
 import { merge } from 'lodash'
+import PapaParse from 'papaparse'
 
 import * as serviceWorker from './serviceWorker';
 
@@ -90,6 +91,9 @@ class Store {
     @action setLogParametr = (obj) => merge(this.log, obj);
     // @action setPathParametr = (obj) => merge(this.row_names, obj);
     @action setStore = (obj) => merge(this, obj);
+    @action setRowName = (name, url_name) => { this.row_names.push({ name, url_name }) };
+    @action popRowName = () => { this.row_names.pop() };
+
 }
 
 
@@ -100,153 +104,207 @@ const appStore = new Store();
 
 function isVerFile(text) {
     const start = "REM expected   |window   |   |sch|      |real values"
-    return text.indexOf(start) == 0;
+    return text.indexOf(start) === 0;
 }
 
 const fetchContent = async (url) => {
-    let response = await fetch(url);
-    let text = await response.text();
-    return text;
+    try {
+        let response = await fetch(url);
+        let text = await response.text();
+        return text;
+    } catch (error) {
+        console.log("Something's wrong", error);
+        return "";
+    }
 }
 
+var config_obj = {
+    delimiter: "\t",// auto-detect
+    newline: "",	// auto-detect
+    header: false,
+    dynamicTyping: false,
+    preview: 0,
+    encoding: "",
+    worker: false,
+    comments: "REM",
+    step: undefined,
+    complete: undefined,
+    error: undefined,
+    download: false,
+    skipEmptyLines: true,//changed
+    chunk: undefined,
+    fastMode: undefined
+};
+
+function findEWOk(papaCSVresult, code_column = 13 - 1) {
+    const error_codes = [
+        "2002",//выход по плейлисту есть, но неизвестен код ролика (невозможно считать из плейлиста, непроинициализирован и т.д.)
+        "0020",//видеоролик не найден на диске
+        "0006",//видеоролик есть на диске, но он битый и/или некорректный
+        "1014",//"блок динамически исключён из расписания пользователем или внешней командой". Выставляется для всех роликов в блоке.
+        "0008", //выход блока прерван пользователем. Выставляется для частично и полностью невышедших роликов.
+        "0012", //во время выхода ролика возникла внутренняя ошибка выдачи". Только для конкретного ролика.
+        "1013", //выход блока прерван по лимиту времени на блок, указанном в расписании". Выставляется для частично и полностью невышедших роликов.
+        "0023"  //"все ролики блока не вышли, потому что не было стартовой метки". Выставляется для всех роликов в блоке.
+    ];
+    const warning_codes = [
+        "0000", //ещё не выходил в эфир
+        "1000", //ещё не выходил в эфир, но уже на подготовке (подгружен)
+        "0013"  //выход блока прерван по закрывающией метке". Выставляется для частично и полностью невышедших роликов.
+    ];
+    const ok_codes = [
+        "0001",// ролик полностью и корректно вышел в эфир6
+        "1001", // прямо сейчас выходит в эфир. !!!! Пока у Аврутина глючит
+    ];
+    const event_codes = papaCSVresult.data.filter(row => row.indexOf("END") === -1).map(row => row[code_column]);
+
+    for (let i = 0; i < event_codes.length; i++) {
+        let code = event_codes[i];
+        if (error_codes.indexOf(code) !== -1)
+            return "ERROR";
+        if (warning_codes.indexOf(code) !== -1)
+            return "WARNING";
+        if (ok_codes.indexOf(code) !== -1) {
+            // console.log("ssssssss")
+            return "OK";
+        }
+        console.log("UNKNOWN CODE", code, "code_column", code_column, papaCSVresult.data);
+    }
+    console.log(event_codes);
+    return "UNKNOWN CODE";
+}
 
 class Link extends Component {
     constructor(props) {
         super(props);
 
-        this.state = { linkClass: "no-file-link", content: "" };
+        this.state = { linkClass: "no-file-link", content: "", csvResult: {} };
         fetchContent(this.props.url).then(text => {
-            console.log(text);
+            const csv_text = text.replace(/[^A-Za-z0-9_|\r\n]+/g, "\t");
+
             if (isVerFile(text)) {
-                this.setState({
-                    linkClass: "exist-file-link",
-                    content: text,
-                });
+                const papaCSVresult = PapaParse.parse(csv_text, config_obj);
+                const error_warrning_ok = findEWOk(papaCSVresult);
+                switch (error_warrning_ok) {
+                    case "ERROR":
+                        this.setState({ linkClass: "error-file-link" });
+                        break;
+                    case "WARNING":
+                        this.setState({ linkClass: "warning-file-link" });
+                        break;
+                    case "OK":
+                        this.setState({ linkClass: "ok-file-link" });
+                        break;
+                    case "UNKNOWN CODE":
+                        this.setState({ linkClass: "exist-file-link" });
+                        break;
+                    default:
+                        console.log("unknow result of find error warning or ok function");
+                }
+                this.setState({ content: text });
             }
         }
         )
     }
 
     render() {
-        // const content = (async () => await download_text(this.props.url))();
-        // let classname = (content !== "") ? 'exist-file-link' : 'no-file-link'
-        // console.log(classname, content);
         return (<div>
             <a
                 href={this.props.url}
+                title={this.state.content}
                 className={this.state.linkClass}
             >
                 {this.props.name}
 
             </a >
-            {/* <button onClick={() => download("http://google.com")}>Download</button> */}
         </div>);
-
     }
 }
 
+function Name(props) {
+    const [name, setName] = useState(props.name);
+    const { store, index } = props;
 
-
-function LinkTable(props) {
-    const store = props.store;
-    const header_items = store.date_range_str.map((str, idx) => <div key={idx}>
-        <div>{str.date.slice(5).replace(/-/g, ".")}</div>
-        <div>{str.day}</div>
-    </div>);
-    return <table>
-        <thead>
-            <tr>
-                <th>Name/Date</th>{header_items.map((link, i) => <th key={i}>{link}</th>)}
-                {/* <th>Path</th> */}
-            </tr>
-        </thead>
-        <tbody>
-            {store.row_names.map((row, idx) => {
-                return <tr key={idx}>
-                    <td>{row.name}</td>
-                    {store.date_range_str.map((str) => {
-                        const { server, user, password, folder, protocol } = store.log;
-                        // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
-                        const log_url = (user != "" && password != "") ?
-                            `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`
-                            :
-                            `${protocol}://${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
-                        return (
-                            <td key={log_url}>
-                                <Link
-                                    name={str.date.slice(5).replace(/-/g, ".")}
-                                    url={log_url}
-                                />
-                            </td>);
-                    }
-                    )}
-                </tr>
-            })}
-        </tbody>
-    </table>
+    return (
+        <div>
+            <input type="text" value={name}
+                onChange={(e) => {
+                    const new_server_name = e.target.value;
+                    setName(new_server_name);
+                    store.setRowName(index, new_server_name);
+                    localStorage.setItem("store", JSON.stringify(store));
+                }}
+            />
+        </div>
+    );
 }
 
+class LinkTable extends Component {
+    render() {
+        const store = this.props.store;
+        const header_items = store.date_range_str.map((str, idx) => <div key={idx}>
+            <div>{str.date.slice(5).replace(/-/g, ".")}</div>
+            <div>{str.day}</div>
+        </div>);
+        return <div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name/Date</th>{header_items.map((link, i) => <th key={i}>{link}</th>)}
+                        {/* <th>Path</th> */}
+                    </tr>
+                </thead>
+                <tbody>
+                    {store.row_names.map((row, idx) => {
+                        return <tr key={idx}>
+                            <td><Name name={row.name} store={appStore} index={idx} /></td>
+                            {store.date_range_str.map((str) => {
+                                const { server, user, password, folder, protocol } = store.log;
+                                // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+                                const log_url = (user !== "" && password !== "") ?
+                                    `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`
+                                    :
+                                    `${protocol}://${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
+                                return (
+                                    <td key={log_url}>
+                                        <Link
+                                            name={str.date.slice(5).replace(/-/g, ".")}
+                                            url={log_url}
+                                        />
+                                    </td>);
+                            }
+                            )}
+                        </tr>
+                    })}
 
-// const download_text = (url) => {
-//     fetch(url)
-//         .then(response => response.text())
-//         .then(down_text => { text = down_text; console.log("down", down_text); })
-//         .catch(error => console.log(`I thin there is no file on ${url} \n ${error}`));
+                </tbody>
+            </table>
+            <button
+                onClick={() => {
+                    const name = prompt("Name of server");
+                    const log_path = prompt("Path to log files");
+                    store.setRowName(name, log_path);
+                    this.forceUpdate();
+                    localStorage.setItem("store", JSON.stringify(store));
 
-//     if (isVerFile(text)) {
-//         // console.log(text);
-//         return text;
-//     }
-
-//     return text;
-// }
-
-// function verFiles(store) {
-//     let tbl=[];
-//     const { server, user, password, folder, protocol } = store.log;
-//     const prefix_log_url = (user != "" && password != "") ?
-//     `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}` //.${str.date.replace(/-/g, ".")}.ver`
-//     :
-//     `${protocol}://${server}/${folder}/${row.url_name}`;//.${str.date.replace(/-/g, ".")}.ver`;
-
-
-//     store.row_names.forEach((row,i) => {
-//         const promises = store.date_range_str.map(str
-
-//         )  row.name
-
-//     });
-
-
-
-
-//     return store.row_names.map(row => {
-
-//         return Promise.all(store.date_range_str.map(async (str) => {
-//             const { server, user, password, folder, protocol } = store.log;
-//             // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
-//             const log_url = (user != "" && password != "") ?
-//                 `${protocol}://${user}:${password}@${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`
-//                 :
-//                 `${protocol}://${server}/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
-//             let response = await fetch(log_url);
-//             let text = await response.text();
-//             return text;
-//         })).then(values => values);
-//     });
-// }
-
-
-
+                }}
+            >+</button>
+            <button
+                onClick={() => {
+                    store.popRowName();
+                    this.forceUpdate();
+                    localStorage.setItem("store", JSON.stringify(store));
+                }}
+            >-</button>
+        </div>
+    }
+}
 
 @observer class App extends Component {
     constructor(props) {
         super(props);
         const local_store = JSON.parse(localStorage.getItem("store"));
         props.store.setStore(local_store);
-
-        // const tbl = verFiles(appStore);
-        // console.log(tbl)
     }
 
     changeLogServerParameters = (e) => {
@@ -295,8 +353,4 @@ function LinkTable(props) {
 
 ReactDOM.render(<App store={appStore} />, document.getElementById('root'));
 
-
-// If you want your app to work offline and load faster, you can change
-// unregister() to register() below. Note this comes with some pitfalls.
-// Learn more about service workers: https://bit.ly/CRA-PWA
 serviceWorker.unregister();
