@@ -31,3 +31,7 @@ code {
 .ok-file-link{
   color: green
 }
+
+input[type=number]{
+  width:30px;
+}

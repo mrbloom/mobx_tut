@@ -22,6 +22,20 @@ function* next_day_ua_generator(initial = 0) {
     }
 }
 
+function splitAndJoin(str, symbol = ':', len = 2) {
+    try {
+
+        return str.split("").reduce(
+            (accum, val, idx) => {
+                // console.log(accum, val, (((idx + 1) % len) === 0), symbol);
+                return [accum, val, (((idx + 1) % len) === 0) ? symbol : ""].join("");
+            });
+    }
+    catch (error) {
+        console.log(`split And Join ${error}`);
+    }
+}
+
 class Store {
     DAY_NIGHT_MS = 3600 * 24 * 1000;
     WEEK_MS = this.DAY_NIGHT_MS * 6;
@@ -34,16 +48,16 @@ class Store {
     @observable first_date_str = this.date2str(this.today);
     @observable last_date_str = this.date2str(new Date(this.today.getTime() + this.WEEK_MS));
     @observable row_names = [
-        { name: "1+1 SDI main serv", url_name: "1plus1/analog/main/1plus1.analog" },
-        { name: "1+1 SDI back serv", url_name: "1plus1/analog/backup/1plus1.analog" },
-        { name: "1+1 SDI main titl", url_name: "1plus1/plashka/main/1plus1.kyiv-sdi" },
-        { name: "1+1 SDI back titl", url_name: "1plus1/plashka/backup/1plus1.kyiv-sdi" },
-        { name: "2+2 SDI main serv", url_name: "2plus2/analog/main/twoplustwo.analog" },
-        { name: "2+2 SDI back serv", url_name: "2plus2/analog/backup/twoplustwo.analog" },
-        { name: "2+2 SDI main titl", url_name: "2plus2/plashka/main/2plus2.kyiv-sdi" },
-        { name: "2+2 SDI back titl", url_name: "2plus2/plashka/backup/2plus2.kyiv-sdi" },
-        { name: "TET SDI main titl", url_name: "TET/plashka/main/TET.kyiv-sdi" },
-        { name: "TET SDI back titl", url_name: "TET/plashka/backup/TET.kyiv-sdi" },
+        { name: "1+1 SDI main serv", url_name: "1plus1/analog/main/1plus1.analog", code_column: 13 },
+        { name: "1+1 SDI back serv", url_name: "1plus1/analog/backup/1plus1.analog", code_column: 13 },
+        { name: "1+1 SDI main titl", url_name: "1plus1/plashka/main/1plus1.kyiv-sdi", code_column: 13 },
+        { name: "1+1 SDI back titl", url_name: "1plus1/plashka/backup/1plus1.kyiv-sdi", code_column: 13 },
+        { name: "2+2 SDI main serv", url_name: "2plus2/analog/main/twoplustwo.analog", code_column: 13 },
+        { name: "2+2 SDI back serv", url_name: "2plus2/analog/backup/twoplustwo.analog", code_column: 13 },
+        { name: "2+2 SDI main titl", url_name: "2plus2/plashka/main/2plus2.kyiv-sdi", code_column: 13 },
+        { name: "2+2 SDI back titl", url_name: "2plus2/plashka/backup/2plus2.kyiv-sdi", code_column: 13 },
+        { name: "TET SDI main titl", url_name: "TET/plashka/main/TET.kyiv-sdi", code_column: 13 },
+        { name: "TET SDI back titl", url_name: "TET/plashka/backup/TET.kyiv-sdi", code_column: 13 },
     ];
 
     @observable log = { protocol: "ftp", server: "server", user: "user", password: "password", folder: "folder" };
@@ -91,7 +105,7 @@ class Store {
     @action setLogParametr = (obj) => merge(this.log, obj);
     // @action setPathParametr = (obj) => merge(this.row_names, obj);
     @action setStore = (obj) => merge(this, obj);
-    @action setRowName = (name, url_name) => { this.row_names.push({ name, url_name }) };
+    @action pushRowName = (name, url_name, code_column) => { this.row_names.push({ name, url_name, code_column }) };
     @action popRowName = () => { this.row_names.pop() };
 
 }
@@ -136,41 +150,65 @@ var config_obj = {
     fastMode: undefined
 };
 
-function findEWOk(papaCSVresult, code_column = 13 - 1) {
-    const error_codes = [
-        "2002",//выход по плейлисту есть, но неизвестен код ролика (невозможно считать из плейлиста, непроинициализирован и т.д.)
-        "0020",//видеоролик не найден на диске
-        "0006",//видеоролик есть на диске, но он битый и/или некорректный
-        "1014",//"блок динамически исключён из расписания пользователем или внешней командой". Выставляется для всех роликов в блоке.
-        "0008", //выход блока прерван пользователем. Выставляется для частично и полностью невышедших роликов.
-        "0012", //во время выхода ролика возникла внутренняя ошибка выдачи". Только для конкретного ролика.
-        "1013", //выход блока прерван по лимиту времени на блок, указанном в расписании". Выставляется для частично и полностью невышедших роликов.
-        "0023"  //"все ролики блока не вышли, потому что не было стартовой метки". Выставляется для всех роликов в блоке.
-    ];
-    const warning_codes = [
-        "0000", //ещё не выходил в эфир
-        "1000", //ещё не выходил в эфир, но уже на подготовке (подгружен)
-        "0013"  //выход блока прерван по закрывающией метке". Выставляется для частично и полностью невышедших роликов.
-    ];
-    const ok_codes = [
-        "0001",// ролик полностью и корректно вышел в эфир6
-        "1001", // прямо сейчас выходит в эфир. !!!! Пока у Аврутина глючит
-    ];
-    const event_codes = papaCSVresult.data.filter(row => row.indexOf("END") === -1).map(row => row[code_column]);
+const error_codes = [
+    "2002",//выход по плейлисту есть, но неизвестен код ролика (невозможно считать из плейлиста, непроинициализирован и т.д.)
+    "0020",//видеоролик не найден на диске
+    "0006",//видеоролик есть на диске, но он битый и/или некорректный
+    "1014",//"блок динамически исключён из расписания пользователем или внешней командой". Выставляется для всех роликов в блоке.
+    "0008", //выход блока прерван пользователем. Выставляется для частично и полностью невышедших роликов.
+    "0012", //во время выхода ролика возникла внутренняя ошибка выдачи". Только для конкретного ролика.
+    "1013", //выход блока прерван по лимиту времени на блок, указанном в расписании". Выставляется для частично и полностью невышедших роликов.
+    "0023"  //"все ролики блока не вышли, потому что не было стартовой метки". Выставляется для всех роликов в блоке.
+];
+const warning_codes = [
+    "0000", //ещё не выходил в эфир
+    "1000", //ещё не выходил в эфир, но уже на подготовке (подгружен)
+    "0013"  //выход блока прерван по закрывающией метке". Выставляется для частично и полностью невышедших роликов.
+];
+const ok_codes = [
+    "0001",// ролик полностью и корректно вышел в эфир6
+    "1001", // прямо сейчас выходит в эфир. !!!! Пока у Аврутина глючит
+];
 
-    for (let i = 0; i < event_codes.length; i++) {
-        let code = event_codes[i];
-        if (error_codes.indexOf(code) !== -1)
-            return "ERROR";
-        if (warning_codes.indexOf(code) !== -1)
-            return "WARNING";
-        if (ok_codes.indexOf(code) !== -1) {
-            // console.log("ssssssss")
-            return "OK";
-        }
-        console.log("UNKNOWN CODE", code, "code_column", code_column, papaCSVresult.data);
+const explains = {
+    "2002": "выход по плейлисту есть, но неизвестен код ролика",
+    "0020": "видеоролик не найден на диске",
+    "0006": "видеоролик битый и/или некорректный",
+    "1014": "блок динамически исключён из расписания пользователем",
+    "0008": "выход блока прерван пользователем.",
+    "0012": "ошибка выдачи. Только для конкретного ролика.",
+    "1013": "выход блока прерван по лимиту времени на блок",
+    "0023": "не было стартовой метки.",
+    "0000": "ещё не выходил в эфир",
+    "1000": "уже на подготовке (подгружен)",
+    "0013": "выход блока прерван по закрывающией метке.",
+    "0001": "вышел в эфир",
+    "1001": "прямо сейчас выходит в эфир. ",
+}
+
+function explain_code(code) {
+    try {
+        return explains[code];
+    } catch{
+        return "Unknown code";
     }
-    console.log(event_codes);
+}
+
+function findEWOk(papaCSVresult, code_column) {
+
+    const event_codes = papaCSVresult.data.filter(row => row.indexOf("END") === -1).map(row => row[(code_column < 0) ? row.length - code_column : code_column]);
+
+    const has_errors = event_codes.filter((event_code) => error_codes.indexOf(event_code) !== -1).length > 0;
+    if (has_errors)
+        return "ERROR";
+    const has_warnings = event_codes.filter((event_code) => warning_codes.indexOf(event_code) !== -1).length > 0;
+    if (has_warnings)
+        return "WARNING";
+    const num_oks = event_codes.filter((event_code) => ok_codes.indexOf(event_code) !== -1).length;
+    if (num_oks === event_codes.length)
+        return "OK";
+
+    console.log("UNKNOWN CODE", papaCSVresult.data);
     return "UNKNOWN CODE";
 }
 
@@ -178,13 +216,15 @@ class Link extends Component {
     constructor(props) {
         super(props);
 
-        this.state = { linkClass: "no-file-link", content: "", csvResult: {} };
+        this.state = { linkClass: "no-file-link", content: "" };
         fetchContent(this.props.url).then(text => {
             const csv_text = text.replace(/[^A-Za-z0-9_|\r\n]+/g, "\t");
 
             if (isVerFile(text)) {
+                const column = props.code_column - 1;
                 const papaCSVresult = PapaParse.parse(csv_text, config_obj);
-                const error_warrning_ok = findEWOk(papaCSVresult);
+                console.log("=====\n", papaCSVresult, csv_text);
+                const error_warrning_ok = findEWOk(papaCSVresult, column);
                 switch (error_warrning_ok) {
                     case "ERROR":
                         this.setState({ linkClass: "error-file-link" });
@@ -201,7 +241,20 @@ class Link extends Component {
                     default:
                         console.log("unknow result of find error warning or ok function");
                 }
-                this.setState({ content: text });
+                const tbl = papaCSVresult.data.filter(
+                    row => row.indexOf("END") === -1).map(
+                        row => [
+                            splitAndJoin(row[8]),
+                            splitAndJoin(row[9]),
+                            row[column],
+                            explain_code(row[column])
+                        ].join(" | "));
+                this.setState({
+                    content:
+                        " Старт      |Длительнос.| Код   |  Обьяснение\n" +
+                        "=============================\n" +
+                        tbl.join("\n")
+                });
             }
         }
         )
@@ -223,6 +276,7 @@ class Link extends Component {
 
 function Name(props) {
     const [name, setName] = useState(props.name);
+    const [code_column, setCodeColumn] = useState(props.code_column);
     const { store, index } = props;
 
     return (
@@ -231,10 +285,17 @@ function Name(props) {
                 onChange={(e) => {
                     const new_server_name = e.target.value;
                     setName(new_server_name);
-                    store.setRowName(index, new_server_name);
+                    store.pushRowName(index, new_server_name, "", code_column);
                     localStorage.setItem("store", JSON.stringify(store));
                 }}
-            />
+                readOnly />
+            <input type="number" value={props.code_column}
+                onChange={(e) => {
+                    setCodeColumn(e.target.value);
+                    store.pushRowName(index, name, code_column);
+                    localStorage.setItem("store", JSON.stringify(store));
+                }}
+                readOnly />
         </div>
     );
 }
@@ -250,14 +311,14 @@ class LinkTable extends Component {
             <table>
                 <thead>
                     <tr>
-                        <th>Name/Date</th>{header_items.map((link, i) => <th key={i}>{link}</th>)}
+                        <th>Name - Code column / Date</th>{header_items.map((link, i) => <th key={i}>{link}</th>)}
                         {/* <th>Path</th> */}
                     </tr>
                 </thead>
                 <tbody>
                     {store.row_names.map((row, idx) => {
                         return <tr key={idx}>
-                            <td><Name name={row.name} store={appStore} index={idx} /></td>
+                            <td><Name name={row.name} store={appStore} index={idx} code_column={row.code_column} /></td>
                             {store.date_range_str.map((str) => {
                                 const { server, user, password, folder, protocol } = store.log;
                                 // const log_url = process.env.PUBLIC_URL + `/${folder}/${row.url_name}.${str.date.replace(/-/g, ".")}.ver`;
@@ -270,20 +331,21 @@ class LinkTable extends Component {
                                         <Link
                                             name={str.date.slice(5).replace(/-/g, ".")}
                                             url={log_url}
+                                            code_column={row.code_column}
                                         />
                                     </td>);
                             }
                             )}
                         </tr>
                     })}
-
                 </tbody>
             </table>
             <button
                 onClick={() => {
-                    const name = prompt("Name of server");
-                    const log_path = prompt("Path to log files");
-                    store.setRowName(name, log_path);
+                    const name = prompt(`Name of server. Example ${store.row_names[0].name}`);
+                    const log_path = prompt(`Path to log files. Example ${store.row_names[0].url_name} `);
+                    const code_column = prompt(`Number of code column. Example ${store.row_names[0].code_column} `);
+                    store.pushRowName(name, log_path, code_column);
                     this.forceUpdate();
                     localStorage.setItem("store", JSON.stringify(store));
 
