@@ -107,23 +107,21 @@ class Store {
     @action setStore = (obj) => merge(this, obj);
     @action pushRowName = (name, url_name, code_column) => { this.row_names.push({ name, url_name, code_column }) };
     @action popRowName = () => { this.row_names.pop() };
+    @action setRowName = (index, name, url_name, code_column) => this.row_names[index] = { name, url_name, code_column };
 
 }
 
-
 const appStore = new Store();
-//console.log(appStore.count);
-
-
 
 function isVerFile(text) {
     const start = "REM expected   |window   |   |sch|      |real values"
     return text.indexOf(start) === 0;
 }
 
-const fetchContent = async (url) => {
+// const fetchContent = async (url, init_object = { headers: (new Headers()).append('pragma', 'no-cache').append('cache-control', 'no-cache') }) => {
+const fetchContent = async (url, init_object = { headers: { 'Cache-control': 'no-cache' } }) => {
     try {
-        let response = await fetch(url);
+        let response = await fetch(url, init_object);
         let text = await response.text();
         return text;
     } catch (error) {
@@ -285,14 +283,15 @@ function Name(props) {
                 onChange={(e) => {
                     const new_server_name = e.target.value;
                     setName(new_server_name);
-                    store.pushRowName(index, new_server_name, "", code_column);
+                    store.pushRowName(index, new_server_name, store.row_names[index].url, code_column);
                     localStorage.setItem("store", JSON.stringify(store));
                 }}
                 readOnly />
             <input type="number" value={props.code_column}
                 onChange={(e) => {
-                    setCodeColumn(e.target.value);
-                    store.pushRowName(index, name, code_column);
+                    const col = parseInt(e.target.value, 10);
+                    setCodeColumn(col);
+                    store.setRowName(index, name, store.row_names[index].url, col);
                     localStorage.setItem("store", JSON.stringify(store));
                 }}
                 readOnly />
@@ -342,9 +341,9 @@ class LinkTable extends Component {
             </table>
             <button
                 onClick={() => {
-                    const name = prompt(`Name of server. Example ${store.row_names[0].name}`);
-                    const log_path = prompt(`Path to log files. Example ${store.row_names[0].url_name} `);
-                    const code_column = prompt(`Number of code column. Example ${store.row_names[0].code_column} `);
+                    const name = prompt(`Name of server. Example ${store.row_names[0].name}`, store.row_names[0].name);
+                    const log_path = prompt(`Path to log files. Example ${store.row_names[0].url_name}`, store.row_names[0].url_name);
+                    const code_column = prompt(`Number of code column. Example ${store.row_names[0].code_column}`, store.row_names[0].code_column);
                     store.pushRowName(name, log_path, code_column);
                     this.forceUpdate();
                     localStorage.setItem("store", JSON.stringify(store));
